@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "peerfold": {
+      "url": "https://app.peerfold.com/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${PEERFOLD_SECRET_KEY}"
+      }
+    }
+  }
+}

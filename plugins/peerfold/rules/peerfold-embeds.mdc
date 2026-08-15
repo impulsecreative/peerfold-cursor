@@ -1,0 +1,102 @@
+---
+description: Rules for embedding Peerfold learner surfaces in a host page — the config object, data attributes, link resolution, and why a 404 renders nothing.
+alwaysApply: false
+---
+
+# Peerfold embed surfaces
+
+Apply these when putting Peerfold surfaces on a site the customer already owns —
+a HubSpot page, a WordPress theme, a static site, anything that can serve a
+`<script>` tag.
+
+## One config object, first writer wins
+
+The host emits exactly one object before the bootstrap script loads:
+
+```html
+<script>
+  window.PeerfoldConfig = window.PeerfoldConfig || {
+    baseUrl: 'https://academy.example.com',
+    publishableKey: 'pk_live_…',
+    authMode: 'assertion',
+    assertion: { payload: '…', sig: '…' },
+    loginHint: '',
+    leadGenMode: 'off'
+  };
+</script>
+```
+
+The `|| ` is the whole multi-surface story: several surfaces on one page share one
+connection and one token, and the first one in page order decides. Surfaces on the
+same page must therefore agree on base URL, key and auth mode. Load the bootstrap
+(`peerfold.js`) first; the renderers each await `window.PeerfoldModules.ready`, so
+their order among themselves does not matter.
+
+Everything else is per surface and rides on `data-peerfold-*` attributes on the
+shell the host renders — which card source, which course slug, which labels,
+which optional rows, the empty-state message. Each renderer reads them in one
+`options()` function near the bottom of its file; that function is the exhaustive
+list.
+
+Two attributes are load-bearing rather than cosmetic:
+
+- `data-peerfold-cards="catalog|enrollments|certificates|resources"` picks the
+  endpoint. An unknown value renders the empty state.
+- `data-peerfold-public="1"` asks for the publishable-key-only read. It is honored
+  for `catalog` and nothing else — the personal lists are about one signed-in
+  person, so a keyed request for them could only 401 behind the empty state.
+
+## Three auth modes
+
+| Mode | What happens | What the host supplies |
+| --- | --- | --- |
+| `assertion` | The host signs a claim server-side; the bootstrap trades it at `POST /api/v1/auth/membership-assertion` for a learner token. Zero login. | `assertion: { payload, sig }`, minted per render, only inside a signed-in branch |
+| `redirect` | Full-page PKCE bounce to `/api/v1/auth/authorize`, code exchanged at `/api/v1/auth/token`. | nothing |
+| `public` | Nothing is minted and nothing is waited for. Reads carry the publishable key alone. | nothing |
+
+Anything unrecognized reads as `assertion`. The assertion wire contract is fixed:
+
+```
+payload = portalId | contactVid | email | tsSeconds      (four fields, "|"-joined)
+sig     = md5(secret + "|" + payload)                    (lowercase hex)
+```
+
+The signing secret comes from **Settings → Developers → Membership assertion**.
+Sign server-side; only the digest ever reaches the page. MD5 is not the security
+here — the per-tenant secret, the strict four-field grammar, the ±300s window,
+single-use burn and a live CRM cross-check are.
+
+Tokens are cached in `sessionStorage` under `peerfold.jwt` / `peerfold.jwt_exp`
+and refreshed a minute before expiry.
+
+## Prefer `cms_url` for course links
+
+Catalog, course and enrollment reads carry a `cms_url`. When the workspace has
+mapped its own front end (**Settings → Developers → Front end**), that field
+carries the customer's own address; otherwise it carries the Peerfold portal URL.
+Render `cms_url` rather than composing a portal path yourself, and links follow
+the customer's site with nothing to republish.
+
+The one deliberate exception is a host-page pattern such as the cohort
+directory's `data-peerfold-thread-page` (`/community?cohort={slug}`). It belongs
+to the host site, so a relative pattern stays relative and is never resolved
+against the Peerfold base URL.
+
+## A 404 is an answer, not an error
+
+The community and partner rails answer `404` rather than a paywall when the
+workspace does not have the add-on — and the partner rail answers the same `404`
+when the signed-in visitor simply is not a partner. The two facts are
+deliberately indistinguishable.
+
+So those surfaces treat `404` as an answer: the shell is removed from the page
+(`hidden` plus inline `display:none`) and one `console.info` line explains it. Not
+an upsell, not an error box, not even an empty bordered box. A partner is somebody
+else's customer's contractor who cannot buy the add-on and is not owed the news
+that a program exists which they are not in. Preserve that posture in anything you
+build on the same rails, and do not add a heading in a separate element that would
+outlive a self-removing surface.
+
+Every other failure — no session, a refused request, a malformed body, an empty
+list, an unknown block type, an unknown video provider — ends at the shell's own
+empty state. No surface renders a status code or a blank gap.

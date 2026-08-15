@@ -1,0 +1,79 @@
+---
+description: Rules for authoring Peerfold course content over MCP — block registry discipline, whole-document writes, and explicit publishing.
+alwaysApply: false
+---
+
+# Authoring on Peerfold
+
+Apply these whenever you create or change course content through the Peerfold MCP
+server or the REST API. They are the four contracts an integration gets wrong.
+
+## Never guess a block shape
+
+A lesson body is an ordered array of blocks. A block is `{ type, props }`, plus
+`children` on the container types. Ask for the shape instead of inventing it:
+
+1. `list_block_types` — every type the registry allows, with its label, category,
+   whether it nests children, and its prop names.
+2. `get_block_schema` — one type's JSON Schema, its default props, and a
+   pasteable example node.
+3. `validate_blocks` — a free dry run that returns the editor's exact per-block
+   errors. Keep the `normalized` array it hands back so block ids stay stable.
+4. `update_lesson_blocks` — the write.
+
+The same registry drives the editor, the renderer, SCORM export and these tools,
+so content written this way renders identically to content typed by hand. Clients
+that surface MCP resources can read the same reference at
+`peerfold://block-schema-reference.json`.
+
+## Read before every whole-document write
+
+Several tools replace an entire document rather than patching it. Read the
+current state first or you delete what you did not resend:
+
+| Replaces the whole thing | Read it with |
+| --- | --- |
+| `update_lesson_blocks` | `get_lesson_blocks` |
+| `set_exam_questions` | `get_exam` |
+| `set_access_rules` | `get_course` |
+| `set_course_ceus` | `get_course_ceus` |
+| `set_homepage` | `get_homepage` (+ `get_homepage_schema`) |
+| `set_portal_menu` | `get_portal_menu` |
+| `set_portal_footer` | `get_portal_footer` |
+| `set_course_landing` / `set_program_landing` (the `sections` document) | `get_course` / `get_program`, plus `get_program_landing_schema` |
+
+`set_course_settings` is the exception: it is a merge patch field by field. Send a
+value to change it, omit it to keep it, send `null` to clear it. `set_course_landing`
+is honestly split — its `enabled` flag merges, its `sections` document replaces,
+and each argument is optional, so neither can silently undo the other.
+
+Every tool's arguments are a strict object. A misspelled or unsupported key is
+refused by name rather than dropped, so fix the name instead of retrying with
+more fields.
+
+## Exam rules and exam questions are two different calls
+
+`set_course_settings { exam }` carries the RULES — passing score, attempts,
+whether results are shown. The QUESTIONS are not part of it: read them with
+`get_exam` and write them with `set_exam_questions`, which replaces the whole
+list. Omit a question's `id` on first write and a stable id is minted; send an id
+you read from `get_exam` to edit that question in place, because a learner's
+in-flight attempt keys on it.
+
+## Publishing is explicit, and it is a revision
+
+Nothing publishes as a side effect. Run `course_health` first: `warnings` and
+`issues` are advisory, and `blockers` is the only list that predicts a failed
+publish. Then call `publish_course` deliberately — if it finds structural issues
+it refuses once and names them; re-call with `confirm_issues: true` to publish
+anyway. It returns the revision number, the live learner URL and the admin review
+URL. `preview_course` gives you a single-use link into the published revision as
+the reserved preview member.
+
+Published courses are immutable revisions. Learners keep reading the previously
+published revision until a new one lands, so a half-finished draft edit is never
+visible to anyone.
+
+Every write is audit-logged with `actorType: "mcp"` and syncs to the connected CRM
+through the standard outbox — an API write and a UI edit are indistinguishable
+downstream.

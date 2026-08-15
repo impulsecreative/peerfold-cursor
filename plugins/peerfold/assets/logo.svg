@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Peerfold</title>
+  <desc id="desc">The Peerfold folded mark on a cream plate.</desc>
+  <rect width="128" height="128" rx="20" fill="#F8F3E9" />
+  <g transform="translate(16 16)">
+    <polygon points="18,12 48,26 48,82 15,48" fill="#14454E" stroke="#14454E" stroke-width="4" stroke-linejoin="round" />
+    <polygon points="78,12 48,26 48,82 81,48" fill="#3E6B74" stroke="#3E6B74" stroke-width="4" stroke-linejoin="round" />
+    <polygon points="12,48 48,82 11,64" fill="#7CA0A8" stroke="#7CA0A8" stroke-width="4" stroke-linejoin="round" />
+    <polygon points="84,48 48,82 85,64" fill="#14454E" stroke="#14454E" stroke-width="4" stroke-linejoin="round" />
+    <path d="M25.5 39 A7 7 0 0 1 38.5 39 A9.5 9.5 0 0 0 25.5 39 Z" fill="#0C2A30" />
+    <path d="M57.5 39 A7 7 0 0 1 70.5 39 A9.5 9.5 0 0 0 57.5 39 Z" fill="#0C2A30" />
+    <polygon points="48,45 53,51 48,57 43,51" fill="#EFA43F" stroke="#EFA43F" stroke-width="3" stroke-linejoin="round" />
+  </g>
+</svg>

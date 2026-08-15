@@ -1,0 +1,18 @@
+{
+  "name": "peerfold",
+  "owner": {
+    "name": "Impulse Creative",
+    "email": "support@peerfold.com"
+  },
+  "metadata": {
+    "description": "Cursor plugins for Peerfold — the learning platform with native HubSpot CRM sync.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "peerfold",
+      "source": "./plugins/peerfold",
+      "description": "Author courses over MCP, embed learner surfaces on any site, and integrate the Peerfold REST API without guessing a schema."
+    }
+  ]
+}

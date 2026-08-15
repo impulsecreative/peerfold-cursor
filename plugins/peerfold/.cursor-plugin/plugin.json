@@ -1,0 +1,14 @@
+{
+  "name": "peerfold",
+  "displayName": "Peerfold",
+  "version": "0.1.0",
+  "description": "Build on Peerfold: connect the tenant-scoped MCP server, author courses under the block registry, embed learner surfaces on a site you already own, and integrate the OpenAPI-first REST API.",
+  "author": {
+    "name": "Impulse Creative",
+    "email": "support@peerfold.com",
+    "url": "https://peerfold.com"
+  },
+  "license": "Apache-2.0",
+  "keywords": ["lms", "courses", "hubspot", "community", "education", "mcp"],
+  "logo": "assets/logo.svg"
+}

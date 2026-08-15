@@ -1,0 +1,61 @@
+---
+description: Rules for Peerfold credentials and base URLs — which key may reach a browser, where each plane lives, and what never gets committed.
+alwaysApply: false
+---
+
+# Peerfold keys and base URLs
+
+Apply these to any code, config, or snippet that talks to a Peerfold workspace.
+
+## Two keys, one of which may reach a browser
+
+Both are minted under **Settings → Developers** in the workspace.
+
+| Key | Where it may live | What it does |
+| --- | --- | --- |
+| `pk_live_…` / `pk_test_…` (publishable) | Browser, page source, a committed theme file | Identifies the workspace. Sent as the `X-Peerfold-Publishable-Key` header. Grants nothing on its own. |
+| `sk_live_…` / `sk_test_…` (secret) | Server environment only | The whole workspace. `Authorization: Bearer sk_live_…`. Shown exactly once. |
+
+A secret key never touches a browser, a client bundle, a committed file, or a
+prompt. It can mint a learner token for any learner in the workspace
+(`POST /api/v1/auth/learner-token`), so anyone holding it can act as anyone. Put
+it in the environment as `PEERFOLD_SECRET_KEY`. A leaked key is revoked and
+replaced, not rotated later.
+
+If you are about to write a secret key into anything a browser loads or Git
+tracks, stop and use a different auth model — publishable key, learner PKCE, or a
+server-side relay.
+
+## Build against the sandbox
+
+Create a key pair with mode **Test**. `sk_test_…` resolves to a sandbox workspace
+with its own courses, learners and enrollments — seeded with demo data and
+excluded from CRM sync, transactional email, billing and metering. Nothing done
+there can reach production data or email a real person. The MCP `try_endpoint`
+tool will only execute a live call under a test key; a live key is refused.
+
+## Two base URLs, and the second one is per workspace
+
+| Plane | Base URL | Credential |
+| --- | --- | --- |
+| Learner (browser) | `https://your-workspace.peerfold.app` | Short-lived learner JWT (15 minutes) |
+| Admin / server | `https://app.peerfold.com` | Secret key `sk_live_…` |
+
+The learner base URL belongs to the customer's workspace — never hardcode a
+placeholder subdomain into shipped code. Read it from configuration, or from the
+`base_url` that `POST /api/v1/connect/wordpress` returns when a site connects
+itself. A workspace on a custom domain reads there instead.
+
+## Request conventions
+
+- Pin the contract with `Peerfold-Version: 2026-07-01`.
+- Errors are RFC 7807 `application/problem+json` with a stable machine-readable
+  `code`. Every response carries `X-Request-Id` — log it, because it turns a
+  support question into a lookup.
+- Rate limits: 120 requests/minute per key on Professional, 600 on Enterprise,
+  60/minute for the anonymous cart. Every response carries limit, remaining and
+  reset; back off on a 429.
+- A browser origin must be on the workspace's CORS allowlist
+  (**Settings → Developers**) or the response is blocked with nothing in any
+  server log to read. This is the single most common cause of a surface that
+  renders its empty state on a correctly configured page.
