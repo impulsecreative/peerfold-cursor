@@ -10,7 +10,7 @@ import process from "node:process";
 const repoRoot = process.cwd();
 const skipDirs = new Set([".git", "node_modules"]);
 const checks = [
-  { name: "em dash (U+2014)", pattern: /—/ },
+  { name: "em dash (U+2014)", pattern: /\u2014/ },
   { name: "absolute path", pattern: /(^|[\s"'`(=])\/(Users|home)\// },
   { name: "parent path segment", pattern: /(^|[\s"'`(=])(\.\.\/|[^\s"'`]*\/\.\.(\/|[\s"'`]|$))/ },
   { name: "secret key", pattern: /sk_(live|test)_/ },
@@ -30,7 +30,6 @@ const files = await walk(repoRoot, []);
 const findings = [];
 for (const file of files) {
   const rel = path.relative(repoRoot, file);
-  if (rel === "scripts/check-text.mjs") continue;
   const text = await fs.readFile(file, "utf8").catch(() => null);
   if (text === null) continue;
   const lines = text.split("\n");
