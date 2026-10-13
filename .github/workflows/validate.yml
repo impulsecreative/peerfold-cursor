@@ -1,0 +1,67 @@
+name: Validate plugin
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, Monday 09:00 UTC: does every tool name the plugin references still exist?
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Manifest, paths, frontmatter, mcp.json pair, logo
+        run: node scripts/validate-template.mjs
+
+      - name: Manifest against Cursor's published plugin schema
+        run: |
+          curl -sSf -o /tmp/plugin.schema.json https://raw.githubusercontent.com/cursor/plugins/main/schemas/plugin.schema.json
+          npx --yes --package ajv-cli@5 --package ajv-formats@2 ajv validate --spec=draft7 -c ajv-formats -s /tmp/plugin.schema.json -d .cursor-plugin/plugin.json
+
+      - name: Frontmatter on rules, skills, agents and commands
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in rules/*.mdc skills/*/SKILL.md agents/*.md commands/*.md; do
+            head -1 "$f" | grep -qx -- '---' || { echo "$f: no frontmatter"; fail=1; }
+            case "$f" in
+              rules/*) grep -q '^description:' "$f" || { echo "$f: missing description"; fail=1; } ;;
+              *) grep -q '^name:' "$f" && grep -q '^description:' "$f" || { echo "$f: missing name or description"; fail=1; } ;;
+            esac
+          done
+          exit $fail
+
+      - name: No em dashes, absolute paths, parent segments or secret keys
+        run: node scripts/check-text.mjs
+
+      - name: Every referenced tool name exists in the registry snapshot
+        run: node scripts/check-tool-names.mjs scripts/registry-snapshot.txt
+
+      - name: Live endpoint answers 401 with OAuth protected-resource metadata
+        run: scripts/check-endpoint.sh
+
+  tool-names-weekly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Every referenced tool name is present in the live llms-full.txt
+        # Fails when llms-full.txt drops a name the plugin uses, and also while
+        # llms-full.txt names fewer than 50 tools, because then it cannot vouch
+        # for the plugin. See the README section "Keep it current".
+        run: node scripts/check-tool-names.mjs https://app.peerfold.com/llms-full.txt

@@ -1,0 +1,40 @@
+# Backticked snake_case identifiers in the plugin that are field names,
+# argument names or placeholders, not MCP tool names. The extractor skips
+# them. Keep this list short and only add a name after reading where it is used.
+admin_base_url
+base_url
+base_version
+client_id
+cms_url
+code_challenge
+code_verifier
+confirm_title
+content_html
+cors_origins
+idempotency_key
+key_created
+key_id
+key_name
+member_id
+next_cursor
+origin_added
+pending_manual
+publishable_key
+redirect_uri
+resource_metadata
+sdk_url
+connection_id
+course_id
+lesson_id
+site_id
+enrollment_id
+due_at
+organization_id
+learner_list_id
+hubspot_list_id
+list_id
+approval_id
+awaiting_approval
+confirm_required
+peerfold_list
+theme_key
