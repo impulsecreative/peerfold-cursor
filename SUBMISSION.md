@@ -45,9 +45,9 @@ cursor.directory reads a public repository at its root.
 | --- | --- |
 | `.mcp.json` or `mcp.json` | Both, byte-identical: one server, `peerfold`, at `https://app.peerfold.com/api/mcp`. |
 | `rules/*.mdc` | `peerfold-authoring.mdc`, `peerfold-embeds.mdc`, `peerfold-keys.mdc`. |
-| `skills/*/SKILL.md` | `api-integrator`, `community-and-partners`, `course-builder`, `enrollment-manager`, `site-integrator`, `sites-builder`. |
+| `skills/*/SKILL.md` | `api-integrator`, `community-and-partners`, `course-builder`, `enrollment-manager`, `site-integrator`, `sites-builder`, `website-migration`. The last one also carries `reference/` and `scripts/` beside its `SKILL.md`; the Cursor plugin reference describes only `SKILL.md` and is silent on other files in a skill folder, so the scripts are plain Python helpers the agent runs in the terminal and nothing depends on Cursor reading them. |
 | `agents/*.md` | `peerfold-course-reviewer.md`. |
-| `hooks/hooks.json` | None. The plugin runs nothing locally. |
+| `hooks/hooks.json` | None. Cursor runs nothing from this plugin on its own. |
 
 ## What the live endpoint answers
 

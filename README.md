@@ -15,8 +15,9 @@ Peerfold is a hosted learning platform with native HubSpot CRM sync, by
   with OAuth. No key is typed anywhere.
 - Three rules: authoring discipline (`peerfold-authoring`), credentials and base
   URLs (`peerfold-keys`), and embed contracts (`peerfold-embeds`).
-- Six skills: `course-builder`, `enrollment-manager`, `sites-builder`,
-  `api-integrator`, `site-integrator`, `community-and-partners`.
+- Seven skills: `course-builder`, `enrollment-manager`, `sites-builder`,
+  `website-migration`, `api-integrator`, `site-integrator`,
+  `community-and-partners`.
 - Three commands: `/peerfold-new-course`, `/peerfold-embed-audit`,
   `/peerfold-api-scaffold`.
 - One agent: `peerfold-course-reviewer`, a read-only review of a draft course.
@@ -35,6 +36,9 @@ plugin does not list every tool. It teaches the agent to start from
   the developer platform API entitlement and checked on every request. A
   workspace without it answers `403` whichever credential is presented.
 - A Cursor build that can connect to a remote MCP server over HTTP with OAuth.
+- For the `website-migration` skill only: Python 3 with the helpers its
+  `SKILL.md` names, installed with
+  `pip install playwright pillow requests beautifulsoup4 && playwright install chromium`.
 
 ## Install
 
@@ -114,9 +118,13 @@ so `plugin.json` declares no `variables`.
 
 ## Privacy
 
-- No code from this plugin runs on your machine. It holds no hooks and no
-  scripts that Cursor executes. The only thing that happens locally is Cursor's
-  MCP client connecting to a remote HTTPS endpoint.
+- Cursor itself runs no code from this plugin. It holds no hooks. The
+  `website-migration` skill ships Python helpers under
+  `skills/website-migration/scripts/` that the agent runs in your terminal, in
+  your project folder, only when you let it. They take screenshots, fetch
+  source images, check links and PUT an image to an upload URL you minted.
+  They read no credential. Apart from that, the only thing that happens
+  locally is Cursor's MCP client connecting to a remote HTTPS endpoint.
 - Every tool acts on one workspace, the one your credential resolves to.
 - Every write is audit-logged. Writes made over OAuth carry
   `source: "mcp-oauth"` with the grant as the actor, so which assistant did what,

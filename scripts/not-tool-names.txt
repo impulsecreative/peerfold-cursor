@@ -38,3 +38,9 @@ awaiting_approval
 confirm_required
 peerfold_list
 theme_key
+# Module field names and an operation name used by skills/website-migration
+cta_label
+cta_url
+heading_after
+heading_hl
+set_props

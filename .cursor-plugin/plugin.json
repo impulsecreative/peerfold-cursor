@@ -1,7 +1,7 @@
 {
   "name": "peerfold",
   "displayName": "Peerfold",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Build courses, manage enrollments and publish Peerfold Sites pages from Cursor through the Peerfold MCP server.",
   "author": {
     "name": "Impulse Creative",
