@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Validates this repository as a single Cursor plugin at the repository root.
+// Checks the manifest, the paths it references, the MCP config pair, the logo,
+// and the frontmatter on every rule, skill, agent and command.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -9,7 +12,6 @@ const errors = [];
 const warnings = [];
 
 const pluginNamePattern = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/;
-const marketplaceNamePattern = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
 function addError(message) {
   errors.push(message);
@@ -28,20 +30,6 @@ async function pathExists(targetPath) {
   }
 }
 
-async function ensureDirectory(targetPath, context) {
-  try {
-    const stat = await fs.stat(targetPath);
-    if (!stat.isDirectory()) {
-      addError(`${context} exists but is not a directory: ${targetPath}`);
-      return false;
-    }
-    return true;
-  } catch {
-    addError(`${context} directory is missing: ${targetPath}`);
-    return false;
-  }
-}
-
 async function readJsonFile(filePath, context) {
   let raw;
   try {
@@ -50,7 +38,6 @@ async function readJsonFile(filePath, context) {
     addError(`${context} is missing: ${filePath}`);
     return null;
   }
-
   try {
     return JSON.parse(raw);
   } catch (error) {
@@ -59,300 +46,228 @@ async function readJsonFile(filePath, context) {
   }
 }
 
-function normalizeNewlines(content) {
-  return content.replace(/\r\n/g, "\n");
-}
-
 function parseFrontmatter(content) {
-  const normalized = normalizeNewlines(content);
-  if (!normalized.startsWith("---\n")) {
-    return null;
-  }
-
+  const normalized = content.replace(/\r\n/g, "\n");
+  if (!normalized.startsWith("---\n")) return null;
   const closingIndex = normalized.indexOf("\n---\n", 4);
-  if (closingIndex === -1) {
-    return null;
-  }
-
-  const frontmatterBlock = normalized.slice(4, closingIndex);
+  if (closingIndex === -1) return null;
   const fields = {};
-
-  for (const line of frontmatterBlock.split("\n")) {
+  for (const line of normalized.slice(4, closingIndex).split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
+    if (!trimmed || trimmed.startsWith("#")) continue;
     const separator = line.indexOf(":");
-    if (separator === -1) {
-      continue;
-    }
-    const key = line.slice(0, separator).trim();
-    const value = line.slice(separator + 1).trim();
-    fields[key] = value;
+    if (separator === -1) continue;
+    fields[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
   }
-
   return fields;
 }
 
 async function walkFiles(dirPath) {
   const files = [];
   const stack = [dirPath];
-
   while (stack.length > 0) {
     const current = stack.pop();
-    const entries = await fs.readdir(current, { withFileTypes: true });
-    for (const entry of entries) {
+    for (const entry of await fs.readdir(current, { withFileTypes: true })) {
       const entryPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(entryPath);
-      } else if (entry.isFile()) {
-        files.push(entryPath);
-      }
+      if (entry.isDirectory()) stack.push(entryPath);
+      else if (entry.isFile()) files.push(entryPath);
     }
   }
-
   return files;
 }
 
 function isSafeRelativePath(value) {
-  if (typeof value !== "string" || value.length === 0) {
-    return false;
-  }
-  if (value.startsWith("http://") || value.startsWith("https://")) {
-    return true;
-  }
-  if (path.isAbsolute(value)) {
-    return false;
-  }
+  if (typeof value !== "string" || value.length === 0) return false;
+  if (value.startsWith("http://") || value.startsWith("https://")) return true;
+  if (path.isAbsolute(value)) return false;
   const normalized = path.posix.normalize(value.replace(/\\/g, "/"));
-  return !normalized.startsWith("../") && normalized !== "..";
+  return !normalized.startsWith(".." + "/") && normalized !== "..";
 }
 
 function extractPathValues(value) {
-  if (typeof value === "string") {
-    return [value];
-  }
-
-  if (Array.isArray(value)) {
-    return value.flatMap((entry) => extractPathValues(entry));
-  }
-
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap((entry) => extractPathValues(entry));
   if (value && typeof value === "object") {
     const candidates = [];
-    if (typeof value.path === "string") {
-      candidates.push(value.path);
-    }
-    if (typeof value.file === "string") {
-      candidates.push(value.file);
-    }
+    if (typeof value.path === "string") candidates.push(value.path);
+    if (typeof value.file === "string") candidates.push(value.file);
     return candidates;
   }
-
   return [];
 }
 
-async function validateReferencedPath(pluginDir, fieldName, pathValue, pluginName) {
-  if (pathValue.startsWith("http://") || pathValue.startsWith("https://")) {
-    return;
-  }
-
+async function validateReferencedPath(fieldName, pathValue) {
+  if (pathValue.startsWith("http://") || pathValue.startsWith("https://")) return;
   if (!isSafeRelativePath(pathValue)) {
-    addError(
-      `${pluginName}: field "${fieldName}" has invalid path "${pathValue}". Use a relative path without ".." or absolute prefixes.`
-    );
+    addError(`Manifest field "${fieldName}" has invalid path "${pathValue}". Use a relative path without ".." or an absolute prefix.`);
     return;
   }
-
-  const resolved = path.resolve(pluginDir, pathValue);
-  const exists = await pathExists(resolved);
-  if (!exists) {
-    addError(`${pluginName}: field "${fieldName}" references missing path "${pathValue}".`);
+  if (!(await pathExists(path.resolve(repoRoot, pathValue)))) {
+    addError(`Manifest field "${fieldName}" references a missing path "${pathValue}".`);
   }
 }
 
-async function validateFrontmatterFile(filePath, componentName, requiredKeys, pluginName) {
+async function validateFrontmatterFile(filePath, componentName, requiredKeys) {
   const content = await fs.readFile(filePath, "utf8");
   const parsed = parseFrontmatter(content);
   const relativeFile = path.relative(repoRoot, filePath);
-
   if (!parsed) {
-    addError(`${pluginName}: ${componentName} file missing YAML frontmatter: ${relativeFile}`);
+    addError(`${componentName} file is missing YAML frontmatter: ${relativeFile}`);
     return;
   }
-
   for (const key of requiredKeys) {
     if (!parsed[key] || parsed[key].length === 0) {
-      addError(`${pluginName}: ${componentName} file missing "${key}" in frontmatter: ${relativeFile}`);
+      addError(`${componentName} file is missing "${key}" in its frontmatter: ${relativeFile}`);
     }
+  }
+  if (parsed.name && !pluginNamePattern.test(parsed.name)) {
+    addError(`${componentName} "name" must be lowercase kebab-case: ${relativeFile}`);
   }
 }
 
-async function validateComponentFrontmatter(pluginDir, pluginName) {
-  const rulesDir = path.join(pluginDir, "rules");
+async function validateComponents() {
+  const markdownExt = new Set([".md", ".mdc", ".markdown"]);
+
+  const rulesDir = path.join(repoRoot, "rules");
   if (await pathExists(rulesDir)) {
-    const files = await walkFiles(rulesDir);
-    for (const file of files) {
-      const ext = path.extname(file).toLowerCase();
-      if (ext === ".md" || ext === ".mdc" || ext === ".markdown") {
-        await validateFrontmatterFile(file, "rule", ["description"], pluginName);
+    for (const file of await walkFiles(rulesDir)) {
+      if (markdownExt.has(path.extname(file).toLowerCase())) {
+        await validateFrontmatterFile(file, "Rule", ["description"]);
       }
     }
+  } else {
+    addWarning("No rules/ directory found.");
   }
 
-  const skillsDir = path.join(pluginDir, "skills");
+  const skillsDir = path.join(repoRoot, "skills");
   if (await pathExists(skillsDir)) {
-    const files = await walkFiles(skillsDir);
-    for (const file of files) {
-      if (path.basename(file) === "SKILL.md") {
-        await validateFrontmatterFile(file, "skill", ["name", "description"], pluginName);
+    let count = 0;
+    for (const entry of await fs.readdir(skillsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const skillFile = path.join(skillsDir, entry.name, "SKILL.md");
+      if (!(await pathExists(skillFile))) {
+        addError(`skills/${entry.name}/ has no SKILL.md.`);
+        continue;
       }
+      count += 1;
+      await validateFrontmatterFile(skillFile, "Skill", ["name", "description"]);
     }
+    if (count === 0) addWarning("skills/ holds no skills.");
+  } else {
+    addWarning("No skills/ directory found.");
   }
 
-  const agentsDir = path.join(pluginDir, "agents");
+  const agentsDir = path.join(repoRoot, "agents");
   if (await pathExists(agentsDir)) {
-    const files = await walkFiles(agentsDir);
-    for (const file of files) {
-      const ext = path.extname(file).toLowerCase();
-      if (ext === ".md" || ext === ".mdc" || ext === ".markdown") {
-        await validateFrontmatterFile(file, "agent", ["name", "description"], pluginName);
+    for (const file of await walkFiles(agentsDir)) {
+      if (markdownExt.has(path.extname(file).toLowerCase())) {
+        await validateFrontmatterFile(file, "Agent", ["name", "description"]);
       }
     }
   }
 
-  const commandsDir = path.join(pluginDir, "commands");
+  const commandsDir = path.join(repoRoot, "commands");
   if (await pathExists(commandsDir)) {
-    const files = await walkFiles(commandsDir);
-    for (const file of files) {
+    for (const file of await walkFiles(commandsDir)) {
       const ext = path.extname(file).toLowerCase();
-      if (ext === ".md" || ext === ".mdc" || ext === ".markdown" || ext === ".txt") {
-        await validateFrontmatterFile(file, "command", ["name", "description"], pluginName);
+      if (markdownExt.has(ext) || ext === ".txt") {
+        await validateFrontmatterFile(file, "Command", ["name", "description"]);
       }
     }
   }
 }
 
-function resolveMarketplaceSource(source, pluginRoot) {
-  if (typeof source !== "string" || source.length === 0) {
-    return null;
+async function validateMcpConfig() {
+  const primary = path.join(repoRoot, "mcp.json");
+  const mirror = path.join(repoRoot, ".mcp.json");
+  if (!(await pathExists(primary))) {
+    addError("mcp.json is missing at the repository root.");
+    return;
   }
-  if (!pluginRoot) {
-    return source;
+  const config = await readJsonFile(primary, "mcp.json");
+  if (!config) return;
+  if (!config.mcpServers || typeof config.mcpServers !== "object" || Object.keys(config.mcpServers).length === 0) {
+    addError('mcp.json must hold a non-empty "mcpServers" object.');
+    return;
   }
-  const normalizedRoot = pluginRoot.replace(/\\/g, "/").replace(/\/+$/, "");
-  const normalizedSource = source.replace(/\\/g, "/");
-  if (normalizedSource === normalizedRoot || normalizedSource.startsWith(`${normalizedRoot}/`)) {
-    return normalizedSource;
+  const raw = JSON.stringify(config);
+  const placeholders = raw.match(/\$\{[A-Z0-9_]+\}/g) ?? [];
+  if (placeholders.length > 0) {
+    addError(`mcp.json uses variables (${placeholders.join(", ")}) but this plugin declares none. Declare them under "variables" in plugin.json or remove them.`);
   }
-  return `${normalizedRoot}/${normalizedSource}`;
+  if (/sk_(live|test)_/.test(raw)) addError("mcp.json contains a secret key.");
+  if (!(await pathExists(mirror))) {
+    addError(".mcp.json is missing. It must be a byte-identical copy of mcp.json.");
+  } else {
+    const [a, b] = await Promise.all([fs.readFile(primary), fs.readFile(mirror)]);
+    if (!a.equals(b)) addError("mcp.json and .mcp.json differ. Keep them byte-identical.");
+  }
+}
+
+async function validateLogo(logoPath) {
+  if (typeof logoPath !== "string" || !logoPath.endsWith(".svg")) return;
+  const resolved = path.resolve(repoRoot, logoPath);
+  if (!(await pathExists(resolved))) return;
+  const svg = await fs.readFile(resolved, "utf8");
+  const viewBox = svg.match(/viewBox="\s*([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s*"/);
+  if (!viewBox) {
+    addError(`Logo ${logoPath} has no viewBox.`);
+    return;
+  }
+  if (Number(viewBox[3]) !== Number(viewBox[4])) {
+    addError(`Logo ${logoPath} is not square (viewBox ${viewBox[3]} by ${viewBox[4]}).`);
+  }
 }
 
 async function main() {
-  const marketplacePath = path.join(repoRoot, ".cursor-plugin", "marketplace.json");
-  const marketplace = await readJsonFile(marketplacePath, "Marketplace manifest");
-  if (!marketplace) {
+  if (await pathExists(path.join(repoRoot, ".cursor-plugin", "marketplace.json"))) {
+    addError("This is a single-plugin repository. Remove .cursor-plugin/marketplace.json.");
+  }
+  if (await pathExists(path.join(repoRoot, "plugins"))) {
+    addError("This is a single-plugin repository. The plugin lives at the root, not under plugins/.");
+  }
+
+  const manifestPath = path.join(repoRoot, ".cursor-plugin", "plugin.json");
+  const manifest = await readJsonFile(manifestPath, "Plugin manifest");
+  if (!manifest) {
     summarizeAndExit();
     return;
   }
 
-  if (typeof marketplace.name !== "string" || !marketplaceNamePattern.test(marketplace.name)) {
-    addError(
-      'Marketplace "name" must be lowercase kebab-case and start/end with an alphanumeric character.'
-    );
+  if (typeof manifest.name !== "string" || !pluginNamePattern.test(manifest.name)) {
+    addError('"name" in plugin.json must be lowercase and use only alphanumerics, hyphens, and periods.');
   }
-
-  if (!marketplace.owner || typeof marketplace.owner.name !== "string" || marketplace.owner.name.length === 0) {
-    addError('Marketplace "owner.name" is required.');
+  if (typeof manifest.description !== "string" || manifest.description.trim().length === 0) {
+    addError('"description" in plugin.json is required for a directory listing.');
   }
-
-  if (!Array.isArray(marketplace.plugins) || marketplace.plugins.length === 0) {
-    addError('Marketplace "plugins" must be a non-empty array.');
-    summarizeAndExit();
-    return;
+  if (typeof manifest.version !== "string" || !/^\d+\.\d+\.\d+$/.test(manifest.version)) {
+    addError('"version" in plugin.json must be a semantic version such as 0.2.0.');
   }
-
-  const pluginRoot = marketplace.metadata?.pluginRoot;
-  if (pluginRoot !== undefined) {
-    if (typeof pluginRoot !== "string" || !isSafeRelativePath(pluginRoot)) {
-      addError('Marketplace "metadata.pluginRoot" must be a safe relative path.');
-    } else {
-      const pluginRootAbs = path.join(repoRoot, pluginRoot);
-      await ensureDirectory(pluginRootAbs, 'Marketplace "metadata.pluginRoot"');
-    }
-  }
-
-  const seenNames = new Set();
-  for (const [index, entry] of marketplace.plugins.entries()) {
-    const label = `plugins[${index}]`;
-
-    if (!entry || typeof entry !== "object") {
-      addError(`${label} must be an object.`);
-      continue;
-    }
-
-    if (typeof entry.name !== "string" || !pluginNamePattern.test(entry.name)) {
-      addError(`${label}.name must be lowercase and use only alphanumerics, hyphens, and periods.`);
-      continue;
-    }
-
-    if (seenNames.has(entry.name)) {
-      addError(`Duplicate plugin name in marketplace manifest: "${entry.name}"`);
-    }
-    seenNames.add(entry.name);
-
-    const sourcePath = resolveMarketplaceSource(entry.source, pluginRoot ?? "");
-    if (!sourcePath) {
-      addError(`${label}.source must be a string path.`);
-      continue;
-    }
-    if (!isSafeRelativePath(sourcePath)) {
-      addError(`${label}.source is not a safe relative path: "${sourcePath}"`);
-      continue;
-    }
-
-    const pluginDir = path.join(repoRoot, sourcePath);
-    const pluginDirExists = await ensureDirectory(pluginDir, `${label}.source`);
-    if (!pluginDirExists) {
-      continue;
-    }
-
-    const manifestPath = path.join(pluginDir, ".cursor-plugin", "plugin.json");
-    const pluginManifest = await readJsonFile(manifestPath, `${entry.name} plugin manifest`);
-    if (!pluginManifest) {
-      continue;
-    }
-
-    if (typeof pluginManifest.name !== "string" || !pluginNamePattern.test(pluginManifest.name)) {
-      addError(
-        `${entry.name}: "name" in plugin.json must be lowercase and use only alphanumerics, hyphens, and periods.`
-      );
-    }
-
-    if (pluginManifest.name && pluginManifest.name !== entry.name) {
-      addError(
-        `${entry.name}: marketplace entry name does not match plugin.json name ("${pluginManifest.name}").`
-      );
-    }
-
-    const manifestFields = ["logo", "rules", "skills", "agents", "commands", "hooks", "mcpServers"];
-    for (const field of manifestFields) {
-      const values = extractPathValues(pluginManifest[field]);
-      for (const value of values) {
-        await validateReferencedPath(pluginDir, field, value, entry.name);
+  if (manifest.author && typeof manifest.author === "object") {
+    for (const key of Object.keys(manifest.author)) {
+      if (key !== "name" && key !== "email") {
+        addError(`"author.${key}" is not allowed by the Cursor plugin schema (only name and email).`);
       }
     }
-
-    await validateComponentFrontmatter(pluginDir, entry.name);
-
-    const hooksPath = path.join(pluginDir, "hooks", "hooks.json");
-    if (!(await pathExists(hooksPath))) {
-      addWarning(`${entry.name}: no hooks/hooks.json file found (only needed when using hooks).`);
+  }
+  for (const field of ["homepage", "repository"]) {
+    if (typeof manifest[field] !== "string" || !manifest[field].startsWith("https://")) {
+      addError(`"${field}" in plugin.json must be an https URL.`);
     }
+  }
+  if (!manifest.logo) addError('"logo" in plugin.json is required for a directory listing.');
 
-    const mcpPath = path.join(pluginDir, "mcp.json");
-    if (!(await pathExists(mcpPath))) {
-      addWarning(`${entry.name}: no mcp.json file found (only needed when using MCP servers).`);
+  for (const field of ["logo", "rules", "skills", "agents", "commands", "hooks", "mcpServers"]) {
+    for (const value of extractPathValues(manifest[field])) {
+      await validateReferencedPath(field, value);
     }
+  }
+  await validateLogo(manifest.logo);
+  await validateComponents();
+  await validateMcpConfig();
+
+  for (const file of ["README.md", "LICENSE", "SUBMISSION.md"]) {
+    if (!(await pathExists(path.join(repoRoot, file)))) addError(`${file} is missing.`);
   }
 
   summarizeAndExit();
@@ -361,20 +276,14 @@ async function main() {
 function summarizeAndExit() {
   if (warnings.length > 0) {
     console.log("Warnings:");
-    for (const warning of warnings) {
-      console.log(`- ${warning}`);
-    }
+    for (const warning of warnings) console.log(`- ${warning}`);
     console.log("");
   }
-
   if (errors.length > 0) {
     console.error("Validation failed:");
-    for (const error of errors) {
-      console.error(`- ${error}`);
-    }
+    for (const error of errors) console.error(`- ${error}`);
     process.exit(1);
   }
-
   console.log("Validation passed.");
 }
 
